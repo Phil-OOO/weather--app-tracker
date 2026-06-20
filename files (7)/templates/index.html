@@ -1,0 +1,384 @@
+<!DOCTYPE html>
+<!--
+  templates/index.html
+  =====================================================================
+  HOW FLASK + JINJA2 TEMPLATES WORK
+  ─────────────────────────────────
+  Flask uses the Jinja2 engine to turn this file into real HTML.
+  Before the page is sent to the browser, Jinja2 replaces every
+  special tag with actual data from Python:
+
+    {{ variable }}          → prints a Python value as text
+    {% for x in list %}     → loops; close with {% endfor %}
+    {% if condition %}      → conditional; close with {% endif %}
+    {# this is a comment #} → stripped out; never sent to the browser
+
+  The variable "readings" comes from render_template("index.html", readings=readings)
+  in app.py.  Anything passed there becomes available here.
+  =====================================================================
+-->
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Climate Temperature Tracker</title>
+
+  <!--
+    Chart.js — loaded from a CDN (Content Delivery Network).
+    This gives us the `Chart` constructor used in the <script> below.
+  -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.2/dist/chart.umd.min.js"></script>
+
+  <!-- Distinctive fonts: Bebas Neue (headers) + Fira Code (data) -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Fira+Code:wght@300;400;500&display=swap" rel="stylesheet" />
+
+  <style>
+    /* ── CSS custom properties (variables) ─────────────────────────
+       Define once here, reuse everywhere.  Change --accent and the
+       whole colour scheme updates instantly.
+    ─────────────────────────────────────────────────────────────── */
+    :root {
+      --bg:         #f5f0e8;   /* warm parchment */
+      --surface:    #ffffff;
+      --ink:        #1a1a2e;
+      --muted:      #8a8a9a;
+      --accent:     #e63946;   /* bold red */
+      --accent2:    #457b9d;   /* steel blue */
+      --border:     #ddd8cc;
+      --radius:     6px;
+      --font-head:  'Bebas Neue', sans-serif;
+      --font-body:  'Fira Code', monospace;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: var(--font-body);
+      background: var(--bg);
+      color: var(--ink);
+      min-height: 100vh;
+    }
+
+    /* ── Top banner ───────────────────────────────────────────── */
+    .banner {
+      background: var(--ink);
+      color: var(--bg);
+      padding: 1.5rem 2rem;
+      display: flex;
+      align-items: baseline;
+      gap: 1rem;
+    }
+    .banner h1 {
+      font-family: var(--font-head);
+      font-size: 3rem;
+      letter-spacing: 2px;
+      line-height: 1;
+      color: var(--accent);
+    }
+    .banner p {
+      font-size: 0.75rem;
+      color: var(--muted);
+      letter-spacing: 1px;
+      text-transform: uppercase;
+    }
+
+    /* ── Two-column layout on wide screens ──────────────────── */
+    .layout {
+      display: grid;
+      grid-template-columns: 320px 1fr;
+      gap: 2rem;
+      max-width: 1100px;
+      margin: 2rem auto;
+      padding: 0 1.5rem;
+    }
+    @media (max-width: 720px) {
+      .layout { grid-template-columns: 1fr; }
+    }
+
+    /* ── Card ───────────────────────────────────────────────── */
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 1.5rem;
+    }
+    .card-title {
+      font-family: var(--font-head);
+      font-size: 1.4rem;
+      letter-spacing: 2px;
+      color: var(--accent2);
+      margin-bottom: 1.25rem;
+      padding-bottom: 0.5rem;
+      border-bottom: 2px solid var(--border);
+    }
+
+    /* ── Form ───────────────────────────────────────────────────
+       action="/submit"  → the URL Flask should receive the POST
+       method="POST"     → sends data in the request body (not the URL)
+       Each <input name="x"> maps to request.form["x"] in Python.
+    ─────────────────────────────────────────────────────────── */
+    .field { display: flex; flex-direction: column; gap: 0.35rem; margin-bottom: 1rem; }
+
+    label {
+      font-size: 0.65rem;
+      text-transform: uppercase;
+      letter-spacing: 2px;
+      color: var(--muted);
+    }
+
+    input[type="text"],
+    input[type="number"],
+    input[type="date"] {
+      font-family: var(--font-body);
+      font-size: 0.9rem;
+      padding: 0.55rem 0.75rem;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: var(--bg);
+      color: var(--ink);
+      transition: border-color 0.15s;
+    }
+    input:focus {
+      outline: none;
+      border-color: var(--accent2);
+    }
+
+    button[type="submit"] {
+      width: 100%;
+      padding: 0.75rem;
+      background: var(--accent);
+      color: #fff;
+      border: none;
+      border-radius: var(--radius);
+      font-family: var(--font-head);
+      font-size: 1.1rem;
+      letter-spacing: 2px;
+      cursor: pointer;
+      transition: background 0.15s, transform 0.1s;
+    }
+    button[type="submit"]:hover  { background: #c1121f; }
+    button[type="submit"]:active { transform: scale(0.98); }
+
+    /* ── Chart ──────────────────────────────────────────────── */
+    .chart-wrap {
+      position: relative;
+      height: 260px;
+      margin-bottom: 1.5rem;
+    }
+
+    /* ── Readings table ─────────────────────────────────────── */
+    .table-scroll { overflow-x: auto; }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.78rem;
+    }
+    thead th {
+      text-align: left;
+      padding: 0.4rem 0.6rem;
+      font-size: 0.65rem;
+      text-transform: uppercase;
+      letter-spacing: 1.5px;
+      color: var(--muted);
+      border-bottom: 2px solid var(--border);
+    }
+    tbody td {
+      padding: 0.5rem 0.6rem;
+      border-bottom: 1px solid var(--border);
+    }
+    tbody tr:last-child td { border-bottom: none; }
+    tbody tr:hover td { background: var(--bg); }
+
+    .temp { color: var(--accent); font-weight: 500; }
+
+    .empty {
+      text-align: center;
+      padding: 2rem;
+      color: var(--muted);
+      font-size: 0.8rem;
+    }
+  </style>
+</head>
+
+<body>
+
+  <!-- ── Banner ─────────────────────────────────────────────────── -->
+  <div class="banner">
+    <h1>🌡 CLIMATE TRACKER</h1>
+    <p>temperature readings by city</p>
+  </div>
+
+  <div class="layout">
+
+    <!-- ── LEFT: Add a Reading form ─────────────────────────────── -->
+    <div class="card">
+      <div class="card-title">ADD READING</div>
+
+      <!--
+        action="/submit" → POST goes to the /submit route in app.py
+        method="POST"    → data is in the request body, not the URL bar
+      -->
+      <form action="/submit" method="POST">
+
+        <!-- name="city" → accessed as request.form["city"] in Python -->
+        <div class="field">
+          <label for="city">City</label>
+          <input type="text" id="city" name="city"
+                 placeholder="e.g. Accra" required />
+        </div>
+
+        <!-- step="0.1" allows decimals like 28.5 -->
+        <div class="field">
+          <label for="temperature">Temperature (°C)</label>
+          <input type="number" id="temperature" name="temperature"
+                 step="0.1" placeholder="e.g. 31.5" required />
+        </div>
+
+        <!-- type="date" gives you a native date picker in the browser -->
+        <div class="field">
+          <label for="date">Date</label>
+          <input type="date" id="date" name="date" required />
+        </div>
+
+        <button type="submit">SAVE READING</button>
+      </form>
+    </div>
+
+    <!-- ── RIGHT: Chart + table ──────────────────────────────────── -->
+    <div>
+
+      <div class="card" style="margin-bottom:1.5rem">
+        <div class="card-title">TEMPERATURE OVER TIME</div>
+        <!--
+          Chart.js draws onto a <canvas> element.
+          We grab it by id in the <script> below.
+        -->
+        <div class="chart-wrap">
+          <canvas id="tempChart"></canvas>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">ALL READINGS</div>
+        <div class="table-scroll">
+          <table>
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>City</th>
+                <th>Temp °C</th>
+                <th>Date</th>
+              </tr>
+            </thead>
+            <tbody>
+
+              {# ── Jinja2 for-loop ──────────────────────────────────────
+                 "readings" is the list we passed from render_template().
+                 Each "row" is a sqlite3.Row — access columns by name.
+                 The {% else %} block runs when readings is empty.
+              ─────────────────────────────────────────────────────────── #}
+              {% for row in readings %}
+              <tr>
+                <td>{{ row["id"] }}</td>
+                <td>{{ row["city"] }}</td>
+                <td class="temp">{{ row["temperature"] }}°</td>
+                <td>{{ row["date"] }}</td>
+              </tr>
+              {% else %}
+              <tr>
+                <td colspan="4" class="empty">No readings yet — add one!</td>
+              </tr>
+              {% endfor %}
+
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+    </div><!-- /right column -->
+  </div><!-- /layout -->
+
+
+  <!-- ── Chart.js initialisation ─────────────────────────────────────────
+    HOW THE DATA FLOWS FROM PYTHON → JAVASCRIPT:
+      1. Jinja2 runs on the SERVER before the page is sent.
+      2. The | tojson filter converts a Python list to a valid JSON array.
+      3. The browser receives static JS arrays; Chart.js reads them.
+
+    {{ readings | map(attribute='date') | list | tojson }}
+      map(attribute='date')  → extract just the "date" field from every row
+      list                   → convert the map-iterator to a Python list
+      tojson                 → serialize to a safe JSON string, e.g. ["2024-06-01",…]
+  ───────────────────────────────────────────────────────────────────────── -->
+  <script>
+    // These arrays are filled in by Jinja2 on the server — by the time your
+    // browser runs this code they are already plain JavaScript arrays.
+    const labels = {{ readings | map(attribute='date')        | list | tojson }};
+    const temps  = {{ readings | map(attribute='temperature') | list | tojson }};
+    const cities = {{ readings | map(attribute='city')        | list | tojson }};
+
+    // Get the 2-D drawing context from the <canvas> element
+    const ctx = document.getElementById("tempChart").getContext("2d");
+
+    new Chart(ctx, {
+      type: "line",          // other options: "bar", "pie", "radar", "scatter"
+
+      data: {
+        labels: labels,      // x-axis labels (the dates)
+        datasets: [{
+          label: "°C",
+          data:  temps,      // y-axis values
+
+          // Line appearance
+          borderColor:          "#e63946",
+          borderWidth:          2,
+          pointBackgroundColor: "#457b9d",
+          pointRadius:          5,
+          pointHoverRadius:     8,
+
+          // Shaded area under the line
+          fill: true,
+          backgroundColor: "rgba(230, 57, 70, 0.08)",
+
+          tension: 0.3,      // 0 = sharp angles, 1 = very curved
+        }]
+      },
+
+      options: {
+        responsive:          true,
+        maintainAspectRatio: false,  // lets .chart-wrap control the height
+
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            // Custom tooltip text
+            callbacks: {
+              title: (items) =>
+                `${cities[items[0].dataIndex]}  ·  ${labels[items[0].dataIndex]}`,
+              label: (item) => `  ${item.raw} °C`,
+            }
+          }
+        },
+
+        scales: {
+          x: {
+            ticks: { color: "#8a8a9a", font: { family: "'Fira Code'" } },
+            grid:  { color: "#ede8e0" },
+          },
+          y: {
+            ticks: {
+              color: "#8a8a9a",
+              font:  { family: "'Fira Code'" },
+              callback: (v) => v + " °",  // append degree symbol
+            },
+            grid: { color: "#ede8e0" },
+          }
+        }
+      }
+    });
+  </script>
+
+</body>
+</html>
